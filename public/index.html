@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive 3D Globe</title>
+  
+  <!-- Import Three.js CDN -->
+  <script async src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
+  
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #000;
+    }
+    #canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-family: Arial, sans-serif;
+      font-size: 18px;
+      font-weight: bold;
+      text-align: center;
+    }
+    .info {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      color: white;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="loading">Loading Universe...</div>
+  <div class="info">
+    Drag to rotate | Scroll to zoom
+  </div>
+  <canvas id="canvas"></canvas>
+  
+  <script>
+    // Wait for Three.js to load
+    window.addEventListener('load', () => {
+      if (typeof THREE === 'undefined') {
+        const loadingInterval = setInterval(() => {
+          if (typeof THREE !== 'undefined') {
+            clearInterval(loadingInterval);
+            init();
+          }
+        }, 100);
+        
+        // Fallback if Three.js takes too long
+        setTimeout(() => {
+          if (typeof THREE === 'undefined') {
+            document.getElementById('loading').textContent = 'Error loading Three.js. Please refresh the page.';
+          }
+        }, 5000);
+      } else {
+        init();
+      }
+    });
+    
+    function init() {
+      // Wait a bit to ensure THREE is fully loaded
+      setTimeout(() => {
+        // Remove loading message
+        document.getElementById('loading').style.display = 'none';
+        
+        // Set up scene
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 5;
+        
+        const renderer = new THREE.WebGLRenderer({
+          canvas: document.getElementById('canvas'),
+          antialias: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x000000);
+        
+        // Add ambient light
+        const ambientLight = new THREE.AmbientLight(0x404080, 0.3);
+        scene.add(ambientLight);
+        
+        // Add directional light
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 3, 5);
+        scene.add(directionalLight);
+        
+        // Create a simple earth sphere
+        const earthGeometry = new THREE.SphereGeometry(1, 64, 64);
+        
+        // Create a procedural texture for Earth
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 128;
+        const context = canvas.getContext('2d');
+        
+        // Ocean background
+        context.fillStyle = '#2E46C0';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Add continents
+        context.fillStyle = '#60A777';
+        
+        // Simple continent shapes
+        for (let i = 0; i < 8; i++) {
+          const x = Math.random() * canvas.width;
+          const y = Math.random() * canvas.height;
+          const radius = 10 + Math.random() * 20;
+          
+          context.beginPath();
+          context.arc(x, y, radius, 0, Math.PI * 2);
+          context.fill();
+          
+          // Add some landmass variations
+          for (let j = 0; j < 5; j++) {
+            const subX = x + (Math.random() * 40 - 20);
+            const subY = y + (Math.random() * 40 - 20);
+            const subRadius = 5 + Math.random() * 10;
+            
+            context.beginPath();
+            context.arc(subX, subY, subRadius, 0, Math.PI * 2);
+            context.fill();
+          }
+        }
+        
+        // Add ice caps
+        context.fillStyle = '#FFFFFF';
+        context.fillRect(0, 0, canvas.width, canvas.height * 0.15);
+        context.fillRect(0, canvas.height * 0.85, canvas.width, canvas.height * 0.15);
+        
+        const earthTexture = new THREE.CanvasTexture(canvas);
+        
+        const earthMaterial = new THREE.MeshStandardMaterial({
+          map: earthTexture,
+          emissive: '#395CE3',
+          emissiveIntensity: 0.4,
+          roughness: 0.7,
+          metalness: 0.3
+        });
+        
+        const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+        scene.add(earth);
+        
+        // Add atmosphere glow
+        const atmosphereGeometry = new THREE.SphereGeometry(1.025, 32, 32);
+        const atmosphereMaterial = new THREE.MeshStandardMaterial({
+          color: '#6FB1FF',
+          transparent: true,
+          opacity: 0.3,
+          roughness: 1,
+          metalness: 0
+        });
+        
+        const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+        scene.add(atmosphere);
+        
+        // Add points on globe surface
+        const pointsGeometry = new THREE.BufferGeometry();
+        const positions = [];
+        const colors = [];
+        
+        // Color palette for dots
+        const dotColors = [
+          '#5582FF', '#82DBFF', '#5EE6E1', 
+          '#76F8B0', '#9F91FF', '#D988FF'
+        ].map(color => new THREE.Color(color));
+        
+        // Create random points on sphere surface
+        for (let i = 0; i < 1500; i++) {
+          // Get random point on sphere
+          const phi = Math.random() * Math.PI * 2;
+          const theta = Math.random() * Math.PI;
+          
+          const x = Math.sin(theta) * Math.cos(phi);
+          const y = Math.sin(theta) * Math.sin(phi);
+          const z = Math.cos(theta);
+          
+          positions.push(x, y, z);
+          
+          // Random color from palette
+          const colorIndex = Math.floor(Math.random() * dotColors.length);
+          const color = dotColors[colorIndex];
+          colors.push(color.r, color.g, color.b);
+        }
+        
+        pointsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        pointsGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        
+        // Create a canvas for dot texture
+        const dotCanvas = document.createElement('canvas');
+        dotCanvas.width = 64;
+        dotCanvas.height = 64;
+        const dotContext = dotCanvas.getContext('2d');
+        
+        // Draw a circle
+        const centerX = dotCanvas.width / 2;
+        const centerY = dotCanvas.height / 2;
+        const radius = dotCanvas.width / 3;
+        
+        const gradient = dotContext.createRadialGradient(
+          centerX, centerY, 0,
+          centerX, centerY, radius
+        );
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        
+        dotContext.fillStyle = gradient;
+        dotContext.fillRect(0, 0, dotCanvas.width, dotCanvas.height);
+        
+        const dotTexture = new THREE.CanvasTexture(dotCanvas);
+        
+        const pointsMaterial = new THREE.PointsMaterial({
+          size: 0.05,
+          map: dotTexture,
+          transparent: true,
+          vertexColors: true,
+          sizeAttenuation: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        });
+        
+        const points = new THREE.Points(pointsGeometry, pointsMaterial);
+        scene.add(points);
+        
+        // Add stars in background
+        const starsGeometry = new THREE.BufferGeometry();
+        const starsPositions = [];
+        const starsColors = [];
+        
+        // Color palette for stars
+        const starColors = [
+          '#FFFFFF', '#E2E2FF', '#FFECB8', 
+          '#D4EAFF', '#FFF1F1', '#E6FFFA'
+        ].map(color => new THREE.Color(color));
+        
+        // Generate random stars
+        for (let i = 0; i < 2000; i++) {
+          // Random position in a large sphere
+          const radius = Math.random() * 100 + 20;
+          const phi = Math.random() * Math.PI * 2;
+          const theta = Math.random() * Math.PI;
+          
+          const x = radius * Math.sin(theta) * Math.cos(phi);
+          const y = radius * Math.sin(theta) * Math.sin(phi);
+          const z = radius * Math.cos(theta);
+          
+          starsPositions.push(x, y, z);
+          
+          // Random star color
+          const colorIndex = Math.floor(Math.random() * starColors.length);
+          const color = starColors[colorIndex];
+          starsColors.push(color.r, color.g, color.b);
+        }
+        
+        starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsPositions, 3));
+        starsGeometry.setAttribute('color', new THREE.Float32BufferAttribute(starsColors, 3));
+        
+        const starsMaterial = new THREE.PointsMaterial({
+          size: 0.1,
+          vertexColors: true,
+          transparent: true,
+          sizeAttenuation: true,
+          blending: THREE.AdditiveBlending
+        });
+        
+        const stars = new THREE.Points(starsGeometry, starsMaterial);
+        scene.add(stars);
+        
+        // Add celestial objects
+        function createCelestialObject(position, scale, color, orbitSpeed, rotationSpeed, orbitRadius, orbitAxis) {
+          const geometry = new THREE.SphereGeometry(1, 32, 32);
+          
+          // Create a glow material
+          const material = new THREE.MeshStandardMaterial({
+            color: color,
+            emissive: color,
+            emissiveIntensity: 0.8,
+            transparent: true,
+            opacity: 0.9
+          });
+          
+          const celestial = new THREE.Mesh(geometry, material);
+          celestial.scale.set(scale, scale, scale);
+          celestial.position.set(...position);
+          scene.add(celestial);
+          
+          // Add a small atmosphere
+          const glowGeometry = new THREE.SphereGeometry(1.2, 32, 32);
+          const glowMaterial = new THREE.MeshBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.BackSide
+          });
+          
+          const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+          glow.scale.set(scale, scale, scale);
+          celestial.add(glow);
+          
+          // Store initial position and properties for animation
+          celestial.userData = {
+            initialPosition: new THREE.Vector3(...position),
+            orbitSpeed: orbitSpeed,
+            rotationSpeed: rotationSpeed,
+            orbitRadius: orbitRadius,
+            orbitAxis: orbitAxis,
+            time: Math.random() * 100 // Random starting time
+          };
+          
+          return celestial;
+        }
+        
+        const celestialObjects = [
+          createCelestialObject([2, 0.5, 0], 0.2, '#6E56CF', 0.3, 0.5, 3, 'y'),
+          createCelestialObject([-2.5, -1, 1], 0.15, '#82AAFF', 0.4, 0.7, 3.5, 'z'),
+          createCelestialObject([1, -2, -1], 0.18, '#6EE7B7', 0.25, 0.6, 3.2, 'x')
+        ];
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Add controls for orbit
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let earthRotation = { x: 0, y: 0 };
+        
+        document.addEventListener('mousedown', (e) => {
+          isDragging = true;
+          previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+        
+        document.addEventListener('mouseup', () => {
+          isDragging = false;
+        });
+        
+        document.addEventListener('mouseleave', () => {
+          isDragging = false;
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+          if (isDragging) {
+            const deltaMove = {
+              x: e.clientX - previousMousePosition.x,
+              y: e.clientY - previousMousePosition.y
+            };
+            
+            earthRotation.y += deltaMove.x * 0.005;
+            earthRotation.x += deltaMove.y * 0.005;
+            
+            // Limit x rotation to avoid flipping
+            earthRotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, earthRotation.x));
+            
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+          }
+        });
+        
+        // Add zoom with mouse wheel
+        document.addEventListener('wheel', (e) => {
+          // Get distance
+          let zoomAmount = e.deltaY * 0.001;
+          
+          // Limit zoom
+          const newZoom = camera.position.z + zoomAmount;
+          if (newZoom > 2 && newZoom < 10) {
+            camera.position.z = newZoom;
+          }
+        });
+        
+        // Animation loop
+        const clock = new THREE.Clock();
+        
+        function animate() {
+          requestAnimationFrame(animate);
+          
+          const delta = clock.getDelta();
+          
+          // Auto-rotate when not dragging
+          if (!isDragging) {
+            earthRotation.y += delta * 0.1;
+          }
+          
+          // Apply earth rotation
+          earth.rotation.x = earthRotation.x;
+          earth.rotation.y = earthRotation.y;
+          atmosphere.rotation.copy(earth.rotation);
+          points.rotation.copy(earth.rotation);
+          
+          // Rotate stars slowly
+          stars.rotation.y += delta * 0.02;
+          stars.rotation.x += delta * 0.01;
+          
+          // Animate celestial objects
+          celestialObjects.forEach(obj => {
+            const userData = obj.userData;
+            userData.time += delta;
+            
+            // Orbit around the globe
+            const orbit = userData.time * userData.orbitSpeed;
+            
+            if (userData.orbitAxis === 'y') {
+              obj.position.x = userData.initialPosition.x + Math.sin(orbit) * userData.orbitRadius;
+              obj.position.z = userData.initialPosition.z + Math.cos(orbit) * userData.orbitRadius;
+            } else if (userData.orbitAxis === 'x') {
+              obj.position.y = userData.initialPosition.y + Math.sin(orbit) * userData.orbitRadius;
+              obj.position.z = userData.initialPosition.z + Math.cos(orbit) * userData.orbitRadius;
+            } else if (userData.orbitAxis === 'z') {
+              obj.position.x = userData.initialPosition.x + Math.sin(orbit) * userData.orbitRadius;
+              obj.position.y = userData.initialPosition.y + Math.cos(orbit) * userData.orbitRadius;
+            }
+            
+            // Rotate the object
+            obj.rotation.x += delta * userData.rotationSpeed;
+            obj.rotation.y += delta * userData.rotationSpeed * 0.7;
+          });
+          
+          renderer.render(scene, camera);
+        }
+        
+        animate();
+      }, 500);
+    }
+  </script>
+</body>
+</html>
